@@ -106,6 +106,20 @@ export function isGoogleVideoUrl(url) {
 }
 
 /**
+ * Xiaohongshu media CDN hosts (sns-video-*.xhscdn.com progressive / spectrum keys).
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isXiaohongshuCdnUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === "xhscdn.com" || host.endsWith(".xhscdn.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {string} url
  * @param {string} [contentType]
  * @returns {boolean}
@@ -117,9 +131,13 @@ export function looksLikeMediaUrl(url, contentType) {
     return true;
   }
   if (typeFromContentType(contentType || "")) return true;
-  // Bilibili / YouTube CDNs often use tokenized URLs without a clear extension;
+  // Bilibili / YouTube / XHS CDNs often use tokenized URLs without a clear extension;
   // also accept octet-stream from those hosts.
-  if (isBilibiliCdnUrl(url) || isGoogleVideoUrl(url)) {
+  if (
+    isBilibiliCdnUrl(url) ||
+    isGoogleVideoUrl(url) ||
+    isXiaohongshuCdnUrl(url)
+  ) {
     if (!contentType) return true;
     const mime = contentType.split(";")[0].trim().toLowerCase();
     if (
