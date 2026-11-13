@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Grabber</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="brand">
+        <img class="brand-icon" src="../icons/icon48.png" alt="" width="28" height="28" />
+        <div class="brand-text">
+          <h1 class="brand-name">Video Grabber</h1>
+          <p class="brand-sub">xiaohongshu · youtube · bilibili</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="list-section" aria-labelledby="list-heading">
+        <div class="list-header">
+          <h2 id="list-heading">检测到的视频</h2>
+          <span id="count-badge" class="count-badge" hidden>0</span>
+        </div>
+
+        <ul id="video-list" class="video-list" aria-live="polite"></ul>
+
+        <div id="empty-state" class="empty-state">
+          <p class="empty-title">暂无视频链接</p>
+          <p class="empty-hint">
+            打开小红书、YouTube 或 Bilibili 页面后，检测到的资源会出现在这里。
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="footer-note">脚手架 · 提取器尚未接入</span>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
