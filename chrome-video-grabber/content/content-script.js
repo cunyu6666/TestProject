@@ -3,8 +3,7 @@
  * - DOM: <video> / <source> src (+ currentSrc)
  * - Performance resource timing for obvious media URLs
  * - MutationObserver for late-injected media
- * - Bilibili / YouTube: site extractors when present (manifest)
- * - Xiaohongshu: stub hook only
+ * - Bilibili / YouTube / Xiaohongshu: site extractors when present (manifest)
  */
 
 (function initVideoGrabberContentScript() {
@@ -114,10 +113,26 @@
    * @param {string} url
    * @returns {boolean}
    */
+  function isXiaohongshuCdn(url) {
+    if (globalThis.VideoGrabberXiaohongshu?.isXiaohongshuCdnUrl) {
+      return globalThis.VideoGrabberXiaohongshu.isXiaohongshuCdnUrl(url);
+    }
+    try {
+      const host = new URL(url, location.href).hostname.toLowerCase();
+      return host === "xhscdn.com" || host.endsWith(".xhscdn.com");
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {string} url
+   * @returns {boolean}
+   */
   function looksLikeMedia(url) {
     if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
     if (EXT_PATTERN.test(url)) return true;
-    return isBilibiliCdn(url) || isGoogleVideo(url);
+    return isBilibiliCdn(url) || isGoogleVideo(url) || isXiaohongshuCdn(url);
   }
 
   /**
@@ -135,7 +150,8 @@
       source === "dom" ||
       source === "dom-source" ||
       (typeof source === "string" && source.startsWith("bilibili")) ||
-      (typeof source === "string" && source.startsWith("youtube"));
+      (typeof source === "string" && source.startsWith("youtube")) ||
+      (typeof source === "string" && source.startsWith("xiaohongshu"));
     if (!allowLoose && !looksLikeMedia(url)) {
       return;
     }
@@ -145,7 +161,9 @@
       type:
         extra.type ||
         guessType(url) ||
-        (isBilibiliCdn(url) || isGoogleVideo(url) ? "mp4" : null),
+        (isBilibiliCdn(url) || isGoogleVideo(url) || isXiaohongshuCdn(url)
+          ? "mp4"
+          : null),
       size: extra.size ?? null,
       source,
     });
@@ -275,8 +293,8 @@
   }
 
   /**
-   * Site-specific hooks. Bilibili / YouTube are real (manifest-injected);
-   * Xiaohongshu remains stubbed.
+   * Site-specific hooks. Bilibili / YouTube / Xiaohongshu are real
+   * (manifest-injected).
    * @returns {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>}
    */
   function collectSiteSpecificVideos() {
@@ -304,9 +322,18 @@
         return [];
       }
     }
-    if (host.includes("xiaohongshu.com")) {
-      // Stub: Xiaohongshu extractor — not implemented.
-      return [];
+    const xhs = globalThis.VideoGrabberXiaohongshu;
+    if (
+      xhs?.isXiaohongshuHost?.(host) ||
+      host.includes("xiaohongshu.com") ||
+      host.includes("xhslink.com")
+    ) {
+      try {
+        return typeof xhs?.collect === "function" ? xhs.collect() : [];
+      } catch (err) {
+        console.debug("[Video Grabber] xiaohongshu collect failed", err);
+        return [];
+      }
     }
     return [];
   }
@@ -352,6 +379,21 @@
     });
   }
 
+  function wireXiaohongshuMainWorld() {
+    const xhs = globalThis.VideoGrabberXiaohongshu;
+    if (!xhs?.subscribeMainWorld) return;
+    xhs.subscribeMainWorld((hits) => {
+      for (const hit of hits) {
+        if (hit?.url) {
+          enqueue(hit.url, hit.source || "xiaohongshu", {
+            type: hit.type,
+            size: hit.size ?? null,
+          });
+        }
+      }
+    });
+  }
+
   chrome.runtime.sendMessage({ type: "ping" }, (response) => {
     if (chrome.runtime.lastError) {
       console.debug(
@@ -365,6 +407,7 @@
 
   wireBilibiliMainWorld();
   wireYouTubeMainWorld();
+  wireXiaohongshuMainWorld();
   scanDomVideos();
   scanPerformanceEntries();
   observePerformance();

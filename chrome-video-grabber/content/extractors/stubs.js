@@ -1,11 +1,14 @@
 /**
- * Site-specific extractors — Xiaohongshu remains a stub.
- * Bilibili is implemented in:
+ * Site-specific extractors — all major sites are implemented elsewhere.
+ * Bilibili:
  *   - content/extractors/bilibili-main.js (MAIN world)
  *   - content/extractors/bilibili.js (isolated bridge)
- * YouTube is implemented in:
+ * YouTube:
  *   - content/extractors/youtube-main.js (MAIN world)
  *   - content/extractors/youtube.js (isolated bridge)
+ * Xiaohongshu:
+ *   - content/extractors/xiaohongshu-main.js (MAIN world)
+ *   - content/extractors/xiaohongshu.js (isolated bridge)
  * Classic content scripts load those via manifest matches (no bundler).
  */
 
@@ -28,8 +31,8 @@ export function runSiteExtractorStubs(hostname) {
     // Real extractor is wired through manifest content_scripts + content-script.js.
     return [];
   }
-  if (host.includes("xiaohongshu.com")) {
-    // Stub: Xiaohongshu note media — not implemented.
+  if (host.includes("xiaohongshu.com") || host.includes("xhslink.com")) {
+    // Real extractor is wired through manifest content_scripts + content-script.js.
     return [];
   }
 
@@ -37,7 +40,7 @@ export function runSiteExtractorStubs(hostname) {
 }
 
 /**
- * Hook point for future site extractors. Bilibili / YouTube handled elsewhere.
+ * Hook point for future site extractors. Bilibili / YouTube / XHS handled elsewhere.
  * @returns {VideoHit[]}
  */
 export function collectSiteSpecificVideos() {

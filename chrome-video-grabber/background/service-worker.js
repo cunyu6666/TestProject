@@ -10,6 +10,7 @@ import {
   typeFromContentType,
   isBilibiliCdnUrl,
   isGoogleVideoUrl,
+  isXiaohongshuCdnUrl,
 } from "../shared/media.js";
 
 /** @typedef {{ url: string, type: string | null, size: number | null, source: string, foundAt: number }} VideoEntry */
@@ -73,20 +74,24 @@ async function upsertVideo(tabId, hit) {
   const url = normalizeMediaUrl(hit.url);
   if (url.startsWith("blob:") || url.startsWith("data:")) return;
 
-  // DOM / Bilibili / YouTube hits may lack file extensions (tokenized CDNs).
+  // DOM / Bilibili / YouTube / XHS hits may lack file extensions (tokenized CDNs).
   const source = hit.source || "";
   const isDom = source === "dom" || source === "dom-source";
   const isBili =
     typeof source === "string" && source.startsWith("bilibili");
   const isYt =
     typeof source === "string" && source.startsWith("youtube");
+  const isXhs =
+    typeof source === "string" && source.startsWith("xiaohongshu");
   if (
     !isDom &&
     !isBili &&
     !isYt &&
+    !isXhs &&
     !looksLikeMediaUrl(url) &&
     !isBilibiliCdnUrl(url) &&
-    !isGoogleVideoUrl(url)
+    !isGoogleVideoUrl(url) &&
+    !isXiaohongshuCdnUrl(url)
   ) {
     return;
   }
@@ -99,6 +104,7 @@ async function upsertVideo(tabId, hit) {
     guessTypeFromUrl(url) ||
     (isBilibiliCdnUrl(url) ? "mp4" : null) ||
     (isGoogleVideoUrl(url) ? "mp4" : null) ||
+    (isXiaohongshuCdnUrl(url) ? "mp4" : null) ||
     null;
   const size =
     hit.size != null && Number.isFinite(hit.size)
