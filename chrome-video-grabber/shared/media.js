@@ -82,6 +82,30 @@ export function isBilibiliCdnUrl(url) {
 }
 
 /**
+ * YouTube googlevideo / videoplayback media URLs (often extensionless + query tokens).
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isGoogleVideoUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    if (host === "googlevideo.com" || host.endsWith(".googlevideo.com")) {
+      return true;
+    }
+    if (
+      (host.includes("youtube.com") || host.includes("youtu.be")) &&
+      /\/videoplayback/i.test(u.pathname)
+    ) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {string} url
  * @param {string} [contentType]
  * @returns {boolean}
@@ -93,13 +117,14 @@ export function looksLikeMediaUrl(url, contentType) {
     return true;
   }
   if (typeFromContentType(contentType || "")) return true;
-  // Bilibili CDN often uses tokenized URLs without a clear extension;
+  // Bilibili / YouTube CDNs often use tokenized URLs without a clear extension;
   // also accept octet-stream from those hosts.
-  if (isBilibiliCdnUrl(url)) {
+  if (isBilibiliCdnUrl(url) || isGoogleVideoUrl(url)) {
     if (!contentType) return true;
     const mime = contentType.split(";")[0].trim().toLowerCase();
     if (
       mime.startsWith("video/") ||
+      mime.startsWith("audio/") ||
       mime === "application/octet-stream" ||
       mime === "application/dash+xml" ||
       mime === ""

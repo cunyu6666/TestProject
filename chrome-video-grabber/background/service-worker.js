@@ -9,6 +9,7 @@ import {
   guessTypeFromUrl,
   typeFromContentType,
   isBilibiliCdnUrl,
+  isGoogleVideoUrl,
 } from "../shared/media.js";
 
 /** @typedef {{ url: string, type: string | null, size: number | null, source: string, foundAt: number }} VideoEntry */
@@ -72,12 +73,21 @@ async function upsertVideo(tabId, hit) {
   const url = normalizeMediaUrl(hit.url);
   if (url.startsWith("blob:") || url.startsWith("data:")) return;
 
-  // DOM <video>/<source> and Bilibili playurl/dash hits may lack file extensions.
+  // DOM / Bilibili / YouTube hits may lack file extensions (tokenized CDNs).
   const source = hit.source || "";
   const isDom = source === "dom" || source === "dom-source";
   const isBili =
     typeof source === "string" && source.startsWith("bilibili");
-  if (!isDom && !isBili && !looksLikeMediaUrl(url) && !isBilibiliCdnUrl(url)) {
+  const isYt =
+    typeof source === "string" && source.startsWith("youtube");
+  if (
+    !isDom &&
+    !isBili &&
+    !isYt &&
+    !looksLikeMediaUrl(url) &&
+    !isBilibiliCdnUrl(url) &&
+    !isGoogleVideoUrl(url)
+  ) {
     return;
   }
 
@@ -88,6 +98,7 @@ async function upsertVideo(tabId, hit) {
     existing?.type ||
     guessTypeFromUrl(url) ||
     (isBilibiliCdnUrl(url) ? "mp4" : null) ||
+    (isGoogleVideoUrl(url) ? "mp4" : null) ||
     null;
   const size =
     hit.size != null && Number.isFinite(hit.size)

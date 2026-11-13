@@ -3,8 +3,8 @@
  * - DOM: <video> / <source> src (+ currentSrc)
  * - Performance resource timing for obvious media URLs
  * - MutationObserver for late-injected media
- * - Bilibili: uses content/extractors/bilibili*.js when present (manifest)
- * - YouTube / Xiaohongshu: stub hooks only
+ * - Bilibili / YouTube: site extractors when present (manifest)
+ * - Xiaohongshu: stub hook only
  */
 
 (function initVideoGrabberContentScript() {
@@ -88,10 +88,36 @@
    * @param {string} url
    * @returns {boolean}
    */
+  function isGoogleVideo(url) {
+    if (globalThis.VideoGrabberYouTube?.isGoogleVideoUrl) {
+      return globalThis.VideoGrabberYouTube.isGoogleVideoUrl(url);
+    }
+    try {
+      const u = new URL(url, location.href);
+      const host = u.hostname.toLowerCase();
+      if (host === "googlevideo.com" || host.endsWith(".googlevideo.com")) {
+        return true;
+      }
+      if (
+        (host.includes("youtube.com") || host.includes("youtu.be")) &&
+        /\/videoplayback/i.test(u.pathname)
+      ) {
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {string} url
+   * @returns {boolean}
+   */
   function looksLikeMedia(url) {
     if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
     if (EXT_PATTERN.test(url)) return true;
-    return isBilibiliCdn(url);
+    return isBilibiliCdn(url) || isGoogleVideo(url);
   }
 
   /**
@@ -104,18 +130,22 @@
     const url = normalize(rawUrl);
     if (url.startsWith("blob:") || url.startsWith("data:")) return;
     if (reported.has(url)) return;
-    // DOM / Bilibili playurl may use extensionless or tokenized CDN URLs.
+    // DOM / site playurl may use extensionless or tokenized CDN URLs.
     const allowLoose =
       source === "dom" ||
       source === "dom-source" ||
-      (typeof source === "string" && source.startsWith("bilibili"));
+      (typeof source === "string" && source.startsWith("bilibili")) ||
+      (typeof source === "string" && source.startsWith("youtube"));
     if (!allowLoose && !looksLikeMedia(url)) {
       return;
     }
     reported.add(url);
     pending.push({
       url,
-      type: extra.type || guessType(url) || (isBilibiliCdn(url) ? "mp4" : null),
+      type:
+        extra.type ||
+        guessType(url) ||
+        (isBilibiliCdn(url) || isGoogleVideo(url) ? "mp4" : null),
       size: extra.size ?? null,
       source,
     });
@@ -245,7 +275,8 @@
   }
 
   /**
-   * Site-specific hooks. Bilibili is real (manifest-injected); others stubbed.
+   * Site-specific hooks. Bilibili / YouTube are real (manifest-injected);
+   * Xiaohongshu remains stubbed.
    * @returns {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>}
    */
   function collectSiteSpecificVideos() {
@@ -259,9 +290,19 @@
         return [];
       }
     }
-    if (host.includes("youtube.com") || host.includes("youtu.be")) {
-      // Stub: YouTube extractor — not implemented.
-      return [];
+    const yt = globalThis.VideoGrabberYouTube;
+    if (
+      yt?.isYouTubeHost?.(host) ||
+      host.includes("youtube.com") ||
+      host.includes("youtu.be") ||
+      host.includes("youtube-nocookie.com")
+    ) {
+      try {
+        return typeof yt?.collect === "function" ? yt.collect() : [];
+      } catch (err) {
+        console.debug("[Video Grabber] youtube collect failed", err);
+        return [];
+      }
     }
     if (host.includes("xiaohongshu.com")) {
       // Stub: Xiaohongshu extractor — not implemented.
@@ -296,6 +337,21 @@
     });
   }
 
+  function wireYouTubeMainWorld() {
+    const yt = globalThis.VideoGrabberYouTube;
+    if (!yt?.subscribeMainWorld) return;
+    yt.subscribeMainWorld((hits) => {
+      for (const hit of hits) {
+        if (hit?.url) {
+          enqueue(hit.url, hit.source || "youtube", {
+            type: hit.type,
+            size: hit.size ?? null,
+          });
+        }
+      }
+    });
+  }
+
   chrome.runtime.sendMessage({ type: "ping" }, (response) => {
     if (chrome.runtime.lastError) {
       console.debug(
@@ -308,13 +364,14 @@
   });
 
   wireBilibiliMainWorld();
+  wireYouTubeMainWorld();
   scanDomVideos();
   scanPerformanceEntries();
   observePerformance();
   observeDomMutations();
   runSiteExtractors();
 
-  // Re-scan shortly after load for late players / Bilibili playinfo.
+  // Re-scan shortly after load for late players / site playinfo.
   setTimeout(() => {
     scanDomVideos();
     scanPerformanceEntries();
