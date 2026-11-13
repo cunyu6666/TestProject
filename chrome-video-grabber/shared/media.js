@@ -106,14 +106,28 @@ export function isGoogleVideoUrl(url) {
 }
 
 /**
- * Xiaohongshu media CDN hosts (sns-video-*.xhscdn.com progressive / spectrum keys).
+ * Xiaohongshu *video* CDN URLs (sns-video-*.xhscdn.com / spectrum / stream).
+ * Rejects image CDN hosts (sns-webpic-*) and obvious image extensions so
+ * generic performance / webRequest scans do not label photos as mp4.
  * @param {string} url
  * @returns {boolean}
  */
 export function isXiaohongshuCdnUrl(url) {
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host === "xhscdn.com" || host.endsWith(".xhscdn.com");
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    if (!(host === "xhscdn.com" || host.endsWith(".xhscdn.com"))) return false;
+    const path = u.pathname.toLowerCase();
+    if (/\.(jpe?g|png|webp|gif|svg|ico|bmp|avif)(?:$)/i.test(path)) {
+      return false;
+    }
+    if (/webpic|sns-avatar|sns-img|ci\.xiaohongshu/i.test(host)) {
+      return false;
+    }
+    if (/sns-video/i.test(host)) return true;
+    if (/\.(mp4|m3u8|m4s|webm|mov)(?:$)/i.test(path)) return true;
+    if (/\/(?:spectrum|stream)\//i.test(path)) return true;
+    return false;
   } catch {
     return false;
   }

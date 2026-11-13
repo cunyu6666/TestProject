@@ -117,9 +117,22 @@
     if (globalThis.VideoGrabberXiaohongshu?.isXiaohongshuCdnUrl) {
       return globalThis.VideoGrabberXiaohongshu.isXiaohongshuCdnUrl(url);
     }
+    // Fallback when XHS bridge is not injected: video CDN only, never images.
     try {
-      const host = new URL(url, location.href).hostname.toLowerCase();
-      return host === "xhscdn.com" || host.endsWith(".xhscdn.com");
+      const u = new URL(url, location.href);
+      const host = u.hostname.toLowerCase();
+      const path = u.pathname.toLowerCase();
+      if (!(host === "xhscdn.com" || host.endsWith(".xhscdn.com"))) {
+        return false;
+      }
+      if (/\.(jpe?g|png|webp|gif|svg|ico|bmp|avif)(?:$)/i.test(path)) {
+        return false;
+      }
+      if (/webpic|sns-avatar|sns-img/i.test(host)) return false;
+      if (/sns-video/i.test(host)) return true;
+      if (/\.(mp4|m3u8|m4s|webm|mov)(?:$)/i.test(path)) return true;
+      if (/\/(?:spectrum|stream)\//i.test(path)) return true;
+      return false;
     } catch {
       return false;
     }

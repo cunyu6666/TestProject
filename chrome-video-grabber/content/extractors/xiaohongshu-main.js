@@ -17,6 +17,8 @@
 
   /** @type {Set<string>} */
   const sent = new Set();
+  /** @type {Map<string, { url: string, type?: string | null, size?: number | null, source?: string }>} */
+  const cache = new Map();
 
   /**
    * @param {unknown} value
@@ -340,6 +342,21 @@
   }
 
   /**
+   * @param {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>} videos
+   */
+  function postVideos(videos) {
+    if (!Array.isArray(videos) || videos.length === 0) return;
+    try {
+      window.postMessage(
+        { source: SOURCE, type: "videos", videos },
+        location.origin
+      );
+    } catch {
+      window.postMessage({ source: SOURCE, type: "videos", videos }, "*");
+    }
+  }
+
+  /**
    * @param {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>} hits
    */
   function publish(hits) {
@@ -348,22 +365,22 @@
     for (const hit of hits) {
       if (!hit?.url) continue;
       const key = hit.url;
+      // Always retain for late isolated-world subscribers (document_idle).
+      cache.set(key, hit);
       if (sent.has(key)) continue;
       sent.add(key);
       fresh.push(hit);
     }
-    if (fresh.length === 0) return;
-    try {
-      window.postMessage(
-        { source: SOURCE, type: "videos", videos: fresh },
-        location.origin
-      );
-    } catch {
-      window.postMessage(
-        { source: SOURCE, type: "videos", videos: fresh },
-        "*"
-      );
-    }
+    postVideos(fresh);
+  }
+
+  /**
+   * Replay every buffered hit so scan-request after document_idle recovers
+   * API-only URLs that arrived before the bridge subscribed.
+   */
+  function replayBuffered() {
+    const all = Array.from(cache.values());
+    postVideos(all);
   }
 
   function scanGlobals() {
@@ -480,6 +497,7 @@
     const data = event.data;
     if (!data || data.source !== SOURCE || data.type !== "scan-request") return;
     scanGlobals();
+    replayBuffered();
   });
 
   hookNetwork();

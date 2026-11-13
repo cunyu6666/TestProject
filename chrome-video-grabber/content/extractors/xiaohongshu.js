@@ -61,9 +61,21 @@
    */
   function isXiaohongshuCdnUrl(url) {
     try {
-      const host = new URL(url, location.href).hostname.toLowerCase();
-      // sns-video-bd / sns-video-hw / spectrum etc. under *.xhscdn.com
-      if (host === "xhscdn.com" || host.endsWith(".xhscdn.com")) return true;
+      const u = new URL(url, location.href);
+      const host = u.hostname.toLowerCase();
+      const path = u.pathname.toLowerCase();
+      // Reject image CDN / extensions — generic scan must not treat photos as mp4.
+      if (/\.(jpe?g|png|webp|gif|svg|ico|bmp|avif)(?:$)/i.test(path)) {
+        return false;
+      }
+      if (/webpic|sns-avatar|sns-img/i.test(host)) return false;
+      // sns-video-bd / sns-video-hw / spectrum / stream under *.xhscdn.com
+      if (host === "xhscdn.com" || host.endsWith(".xhscdn.com")) {
+        if (/sns-video/i.test(host)) return true;
+        if (/\.(mp4|m3u8|m4s|webm|mov)(?:$)/i.test(path)) return true;
+        if (/\/(?:spectrum|stream)\//i.test(path)) return true;
+        return false;
+      }
       if (host.includes("xiaohongshu.com") && /\.mp4(?:$|[?#])/i.test(url)) {
         return true;
       }
