@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Video Grabber — public HLS fixture</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.45;
+      }
+      code {
+        font-size: 0.92em;
+      }
+      video {
+        width: 100%;
+        background: #111;
+        margin: 1rem 0;
+      }
+      .note {
+        color: #444;
+        font-size: 0.95rem;
+      }
+      ol {
+        padding-left: 1.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Public HLS (.m3u8) fixture</h1>
+    <p class="note">
+      Uses Mux’s public Big Buck Bunny test stream (clear, unencrypted VOD). Serve
+      this folder over <code>http://127.0.0.1</code> (not only
+      <code>file://</code>), load the unpacked extension, open this page, then use
+      the popup’s <strong>合并下载</strong> on the detected <code>m3u8</code> row.
+    </p>
+
+    <p>
+      Master playlist:<br />
+      <a
+        id="master-link"
+        href="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+        >https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8</a
+      >
+    </p>
+    <p>
+      Smaller media playlist (faster merge test, ~240p):<br />
+      <a
+        id="media-link"
+        href="https://test-streams.mux.dev/x36xhzz/url_2/193039199_mp4_h264_aac_ld_7.m3u8"
+        >https://test-streams.mux.dev/x36xhzz/url_2/193039199_mp4_h264_aac_ld_7.m3u8</a
+      >
+    </p>
+
+    <!-- Native HLS works in Safari; Chrome may need MSE. Detection still sees the src. -->
+    <video
+      id="player"
+      controls
+      playsinline
+      crossorigin="anonymous"
+      src="https://test-streams.mux.dev/x36xhzz/url_2/193039199_mp4_h264_aac_ld_7.m3u8"
+    ></video>
+
+    <h2>How to test</h2>
+    <ol>
+      <li>
+        <code>cd chrome-video-grabber/fixtures && python3 -m http.server 8765 --bind 127.0.0.1</code>
+      </li>
+      <li>
+        Chrome → <code>chrome://extensions</code> → Load unpacked →
+        <code>chrome-video-grabber/</code>
+      </li>
+      <li>Open <code>http://127.0.0.1:8765/sample-hls.html</code></li>
+      <li>Open Video Grabber popup → expect an <code>HLS</code> / <code>m3u8</code> row</li>
+      <li>Click <strong>合并下载</strong> → Chrome Downloads should get a <code>.ts</code> file</li>
+    </ol>
+    <p class="note">
+      Master playlists also work: the extension picks the highest-bandwidth
+      variant. Prefer the smaller media URL above for a quicker smoke test.
+    </p>
+  </body>
+</html>

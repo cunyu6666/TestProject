@@ -16,9 +16,34 @@ export const MEDIA_EXTENSIONS = [
   "flv",
   "ts",
   "m4s",
+  "m3u8",
+  "m3u",
 ];
 
-export const MEDIA_MIME_PREFIXES = ["video/", "application/vnd.apple.mpegurl"];
+export const MEDIA_MIME_PREFIXES = [
+  "video/",
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+  "audio/mpegurl",
+  "audio/x-mpegurl",
+];
+
+/**
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isHlsPlaylistUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  try {
+    const u = new URL(url);
+    const path = u.pathname.toLowerCase();
+    if (path.endsWith(".m3u8") || path.endsWith(".m3u")) return true;
+    if (/[?&](m3u8|playlist|format=m3u8)\b/i.test(u.search)) return true;
+    return false;
+  } catch {
+    return /\.m3u8(?:$|[?#])/i.test(url);
+  }
+}
 
 const EXT_PATTERN = new RegExp(
   `\\.(${MEDIA_EXTENSIONS.join("|")})(?:$|[?#])`,
@@ -31,10 +56,12 @@ const EXT_PATTERN = new RegExp(
  */
 export function guessTypeFromUrl(url) {
   try {
+    if (isHlsPlaylistUrl(url)) return "m3u8";
     const path = new URL(url).pathname;
     const match = path.match(/\.([a-z0-9]+)$/i);
     if (!match) return null;
     const ext = match[1].toLowerCase();
+    if (ext === "m3u") return "m3u8";
     return MEDIA_EXTENSIONS.includes(ext) ? ext : null;
   } catch {
     return null;
@@ -55,7 +82,12 @@ export function typeFromContentType(contentType) {
     if (subtype === "ogg") return "ogv";
     return subtype || "video";
   }
-  if (mime === "application/vnd.apple.mpegurl" || mime === "application/x-mpegurl") {
+  if (
+    mime === "application/vnd.apple.mpegurl" ||
+    mime === "application/x-mpegurl" ||
+    mime === "audio/mpegurl" ||
+    mime === "audio/x-mpegurl"
+  ) {
     return "m3u8";
   }
   return null;
@@ -127,6 +159,7 @@ export function isXiaohongshuCdnUrl(url) {
 export function looksLikeMediaUrl(url, contentType) {
   if (!url || typeof url !== "string") return false;
   if (url.startsWith("blob:") || url.startsWith("data:")) return false;
+  if (isHlsPlaylistUrl(url)) return true;
   if (contentType && MEDIA_MIME_PREFIXES.some((p) => contentType.toLowerCase().startsWith(p))) {
     return true;
   }

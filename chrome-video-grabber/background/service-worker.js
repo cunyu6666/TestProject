@@ -11,9 +11,14 @@ import {
   isBilibiliCdnUrl,
   isGoogleVideoUrl,
   isXiaohongshuCdnUrl,
+  isHlsPlaylistUrl,
 } from "../shared/media.js";
 
-/** @typedef {{ url: string, type: string | null, size: number | null, source: string, foundAt: number }} VideoEntry */
+/** @typedef {{ url: string, type: string | null, size: number | null, source: string, foundAt: number, kind?: 'progressive' | 'hls' }} VideoEntry */
+
+const OFFSCREEN_URL = "offscreen/offscreen.html";
+/** @type {Promise<void> | null} */
+let offscreenReady = null;
 
 /** @type {Map<number, Map<string, VideoEntry>>} */
 const videosByTab = new Map();
@@ -102,6 +107,7 @@ async function upsertVideo(tabId, hit) {
     hit.type ||
     existing?.type ||
     guessTypeFromUrl(url) ||
+    (isHlsPlaylistUrl(url) ? "m3u8" : null) ||
     (isBilibiliCdnUrl(url) ? "mp4" : null) ||
     (isGoogleVideoUrl(url) ? "mp4" : null) ||
     (isXiaohongshuCdnUrl(url) ? "mp4" : null) ||
@@ -110,6 +116,8 @@ async function upsertVideo(tabId, hit) {
     hit.size != null && Number.isFinite(hit.size)
       ? hit.size
       : existing?.size ?? null;
+  const kind =
+    type === "m3u8" || isHlsPlaylistUrl(url) ? "hls" : "progressive";
 
   map.set(url, {
     url,
@@ -117,8 +125,87 @@ async function upsertVideo(tabId, hit) {
     size,
     source: hit.source || existing?.source || "unknown",
     foundAt: existing?.foundAt ?? Date.now(),
+    kind,
   });
   await persistTab(tabId);
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+function pingOffscreen() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "hls:offscreen-ping" }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve(false);
+        return;
+      }
+      resolve(Boolean(response?.ok));
+    });
+  });
+}
+
+/**
+ * Ensure the Offscreen Document used for HLS blob merge exists and can reply.
+ * @returns {Promise<void>}
+ */
+async function ensureOffscreenDocument() {
+  if (offscreenReady) {
+    await offscreenReady;
+    return;
+  }
+
+  offscreenReady = (async () => {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ["OFFSCREEN_DOCUMENT"],
+      documentUrls: [chrome.runtime.getURL(OFFSCREEN_URL)],
+    });
+    if (!contexts || contexts.length === 0) {
+      await chrome.offscreen.createDocument({
+        url: OFFSCREEN_URL,
+        reasons: ["BLOBS"],
+        justification:
+          "Merge HLS (.m3u8) segments into a single Blob for chrome.downloads",
+      });
+    }
+
+    // Script load is async after createDocument — wait briefly for ping.
+    for (let i = 0; i < 20; i++) {
+      if (await pingOffscreen()) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error("Offscreen Document 未就绪，无法合并 HLS");
+  })();
+
+  try {
+    await offscreenReady;
+  } finally {
+    offscreenReady = null;
+  }
+}
+
+/**
+ * @param {string} url
+ * @param {'highest' | 'lowest'} [variant]
+ * @returns {Promise<{ ok: boolean, reason?: string, downloadId?: number, filename?: string, segmentCount?: number, bytes?: number, variantLabel?: string | null }>}
+ */
+async function downloadHlsMerged(url, variant = "highest") {
+  await ensureOffscreenDocument();
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: "hls:merge-download", url, variant },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({
+            ok: false,
+            reason: chrome.runtime.lastError.message,
+          });
+          return;
+        }
+        resolve(response || { ok: false, reason: "no-response" });
+      }
+    );
+  });
 }
 
 /**
@@ -245,6 +332,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, reason: "missing-url" });
       return false;
     }
+    // Progressive / direct URL download — leave m3u8 to videos:download-hls.
+    if (isHlsPlaylistUrl(url)) {
+      sendResponse({
+        ok: false,
+        reason: "这是 HLS 播放列表，请使用「合并下载」",
+      });
+      return false;
+    }
     void (async () => {
       try {
         let filename;
@@ -262,6 +357,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           conflictAction: "uniquify",
         });
         sendResponse({ ok: true, downloadId });
+      } catch (err) {
+        sendResponse({
+          ok: false,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "videos:download-hls") {
+    const url = message.url;
+    if (!url || typeof url !== "string") {
+      sendResponse({ ok: false, reason: "missing-url" });
+      return false;
+    }
+    void (async () => {
+      try {
+        const variant =
+          message.variant === "lowest" ? "lowest" : "highest";
+        const result = await downloadHlsMerged(url, variant);
+        sendResponse(result);
       } catch (err) {
         sendResponse({
           ok: false,

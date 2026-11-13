@@ -165,6 +165,15 @@ body {
   background: var(--accent-soft);
 }
 
+.meta-chip.hls {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.14);
+}
+
+.video-item-hls {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
 .video-actions {
   display: flex;
   gap: 6px;
@@ -195,6 +204,17 @@ body {
 .action-btn.copied {
   color: var(--success);
   border-color: rgba(52, 211, 153, 0.45);
+}
+
+.action-btn-primary {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: var(--accent-soft);
+  color: #93c5fd;
+}
+
+.action-btn-primary:hover {
+  border-color: var(--accent);
+  color: #bfdbfe;
 }
 
 .empty-state {
