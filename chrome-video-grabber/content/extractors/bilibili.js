@@ -315,6 +315,12 @@
       onHits(data.videos);
     }
     window.addEventListener("message", onMessage);
+    // Signal readiness so MAIN can replay hits published before document_idle.
+    try {
+      window.postMessage({ source: SOURCE, type: "ready" }, location.origin);
+    } catch {
+      window.postMessage({ source: SOURCE, type: "ready" }, "*");
+    }
     return () => window.removeEventListener("message", onMessage);
   }
 

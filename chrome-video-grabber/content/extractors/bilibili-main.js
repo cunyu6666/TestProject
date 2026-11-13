@@ -10,8 +10,8 @@
   const PLAYURL_HINT =
     /playurl|player\/wbi\/playurl|player\/playurl|pgc\/player|pugv\/player/i;
 
-  /** @type {Set<string>} */
-  const sent = new Set();
+  /** @type {Map<string, { url: string, type?: string | null, size?: number | null, source?: string }>} */
+  const buffered = new Map();
 
   /**
    * @param {string} url
@@ -161,30 +161,44 @@
   }
 
   /**
+   * Store hits so early document_start discoveries survive until the
+   * isolated bridge listens (document_idle) and can request a replay.
    * @param {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>} hits
+   * @param {{ replayAll?: boolean }} [opts]
    */
-  function publish(hits) {
-    if (!Array.isArray(hits) || hits.length === 0) return;
+  function publish(hits, opts = {}) {
+    if (!Array.isArray(hits) || hits.length === 0) {
+      if (!opts.replayAll || buffered.size === 0) return;
+    }
     const fresh = [];
-    for (const hit of hits) {
+    for (const hit of hits || []) {
       if (!hit?.url) continue;
       const key = hit.url;
-      if (sent.has(key)) continue;
-      sent.add(key);
-      fresh.push(hit);
+      if (!buffered.has(key)) {
+        buffered.set(key, hit);
+        fresh.push(hit);
+      }
     }
-    if (fresh.length === 0) return;
+    const toSend = opts.replayAll
+      ? Array.from(buffered.values())
+      : fresh;
+    if (toSend.length === 0) return;
     try {
       window.postMessage(
-        { source: SOURCE, type: "videos", videos: fresh },
+        { source: SOURCE, type: "videos", videos: toSend },
         location.origin
       );
     } catch {
       window.postMessage(
-        { source: SOURCE, type: "videos", videos: fresh },
+        { source: SOURCE, type: "videos", videos: toSend },
         "*"
       );
     }
+  }
+
+  /** Replay every buffered hit (for late bridge subscribers). */
+  function replayBuffered() {
+    publish([], { replayAll: true });
   }
 
   function scanGlobals() {
@@ -250,9 +264,19 @@
           try {
             const reqUrl = this.__vgUrl || "";
             if (!PLAYURL_HINT.test(reqUrl)) return;
-            const text = this.responseText;
-            if (!text) return;
-            handlePlayurlPayload(reqUrl, JSON.parse(text));
+            let payload = null;
+            // responseType "json" makes responseText throw InvalidStateError.
+            if (this.responseType === "json") {
+              payload = this.response;
+            } else if (this.responseType === "" || this.responseType === "text") {
+              const text = this.responseText;
+              if (!text) return;
+              payload = JSON.parse(text);
+            } else if (typeof this.response === "string" && this.response) {
+              payload = JSON.parse(this.response);
+            }
+            if (payload == null) return;
+            handlePlayurlPayload(reqUrl, payload);
           } catch {
             /* ignore non-JSON */
           }
@@ -292,8 +316,11 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     const data = event.data;
-    if (!data || data.source !== SOURCE || data.type !== "scan-request") return;
-    scanGlobals();
+    if (!data || data.source !== SOURCE) return;
+    if (data.type === "scan-request" || data.type === "ready") {
+      scanGlobals();
+      replayBuffered();
+    }
   });
 
   hookNetwork();
