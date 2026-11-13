@@ -11,14 +11,24 @@
   const PLAYER_HINT =
     /\/youtubei\/v1\/player|get_video_info|\/player\?/i;
 
+  /**
+   * All discovered hits. Early postMessages may fire before the isolated
+   * subscriber is attached (document_start vs document_idle); we buffer and
+   * replay on scan-request so those URLs are not permanently lost.
+   * @type {Map<string, { url: string, type?: string | null, size?: number | null, source?: string }>}
+   */
+  const buffered = new Map();
+
+  /** URLs already postMessaged in the current "live" window (not during replay). */
   /** @type {Set<string>} */
   const sent = new Set();
 
   /**
+   * Type from URL query/path only — never hostname defaults.
    * @param {string} url
    * @returns {string | null}
    */
-  function guessType(url) {
+  function guessTypeFromUrl(url) {
     try {
       const u = new URL(url, location.href);
       const mime = u.searchParams.get("mime");
@@ -35,6 +45,19 @@
     } catch {
       /* ignore */
     }
+    return null;
+  }
+
+  /**
+   * @param {unknown} mimeType
+   * @returns {string | null}
+   */
+  function typeFromMimeType(mimeType) {
+    if (typeof mimeType !== "string") return null;
+    const mime = mimeType.toLowerCase();
+    if (mime.includes("webm")) return "webm";
+    if (mime.includes("mp4")) return "mp4";
+    if (mime.includes("mp2t")) return "ts";
     return null;
   }
 
@@ -135,13 +158,8 @@
         if (Number.isFinite(n) && n > 0) size = n;
       }
 
-      let type = guessType(url);
-      if (!type && typeof f.mimeType === "string") {
-        const mime = f.mimeType.toLowerCase();
-        if (mime.includes("webm")) type = "webm";
-        else if (mime.includes("mp4")) type = "mp4";
-        else if (mime.includes("mp2t")) type = "ts";
-      }
+      // Prefer format mimeType over URL/host heuristics.
+      const type = typeFromMimeType(f.mimeType) || guessTypeFromUrl(url);
 
       hits.push({ url, type, size, source });
     }
@@ -176,6 +194,25 @@
   }
 
   /**
+   * @param {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>} videos
+   */
+  function postVideos(videos) {
+    if (!videos.length) return;
+    try {
+      window.postMessage(
+        { source: SOURCE, type: "videos", videos },
+        location.origin
+      );
+    } catch {
+      window.postMessage(
+        { source: SOURCE, type: "videos", videos },
+        "*"
+      );
+    }
+  }
+
+  /**
+   * Merge into buffer; post only URLs not yet sent (live path).
    * @param {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>} hits
    */
   function publish(hits) {
@@ -184,22 +221,35 @@
     for (const hit of hits) {
       if (!hit?.url) continue;
       const key = hit.url;
+      const prev = buffered.get(key);
+      if (!prev) {
+        buffered.set(key, hit);
+      } else {
+        buffered.set(key, {
+          ...prev,
+          ...hit,
+          type: hit.type || prev.type || null,
+          size: hit.size ?? prev.size ?? null,
+          source: hit.source || prev.source,
+        });
+      }
       if (sent.has(key)) continue;
       sent.add(key);
-      fresh.push(hit);
+      fresh.push(buffered.get(key));
     }
-    if (fresh.length === 0) return;
-    try {
-      window.postMessage(
-        { source: SOURCE, type: "videos", videos: fresh },
-        location.origin
-      );
-    } catch {
-      window.postMessage(
-        { source: SOURCE, type: "videos", videos: fresh },
-        "*"
-      );
-    }
+    postVideos(fresh);
+  }
+
+  /**
+   * Replay every buffered hit (clears the live sent gate). Used when the
+   * isolated bridge asks for a scan after connecting at document_idle.
+   */
+  function replayBuffered() {
+    if (buffered.size === 0) return;
+    const videos = Array.from(buffered.values());
+    sent.clear();
+    for (const hit of videos) sent.add(hit.url);
+    postVideos(videos);
   }
 
   function scanGlobals() {
@@ -325,6 +375,8 @@
     const data = event.data;
     if (!data || data.source !== SOURCE || data.type !== "scan-request") return;
     scanGlobals();
+    // Re-emit buffered hits so early MAIN posts (before subscribe) are recovered.
+    replayBuffered();
   });
 
   hookNetwork();
