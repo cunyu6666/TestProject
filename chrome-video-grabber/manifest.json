@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Video Grabber",
-  "version": "0.1.0",
-  "description": "Capture video resource URLs from Xiaohongshu, YouTube, and Bilibili (scaffold).",
+  "version": "0.2.0",
+  "description": "Detect video resource URLs on the active tab and list them for copy / download.",
   "action": {
     "default_title": "Video Grabber",
     "default_popup": "popup/popup.html",
@@ -23,21 +23,18 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "*://*.xiaohongshu.com/*",
-        "*://*.youtube.com/*",
-        "*://*.youtu.be/*",
-        "*://*.bilibili.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["content/content-script.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
-  "host_permissions": [
-    "*://*.xiaohongshu.com/*",
-    "*://*.youtube.com/*",
-    "*://*.youtu.be/*",
-    "*://*.bilibili.com/*"
-  ],
-  "permissions": ["storage", "activeTab"]
+  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "tabs",
+    "webRequest",
+    "downloads"
+  ]
 }

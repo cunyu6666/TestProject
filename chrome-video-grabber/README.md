@@ -1,16 +1,27 @@
-# Video Grabber (Chrome MV3 scaffold)
+# Video Grabber (Chrome MV3)
 
-Chrome Extension Manifest V3 scaffold for capturing video resource URLs from **Xiaohongshu**, **YouTube**, and **Bilibili**.
+Chrome Extension Manifest V3 — detect video resource URLs on the **active tab** and list them in the popup for **copy** / **browser download**.
 
-This deliverable is scaffolding only: popup list shell, background service worker stub, and content-script stub. Site-specific extractors and HLS are **not** implemented yet.
+## What this version does
+
+- Scans `<video>` / `<source>` `src` (and `currentSrc`) via the content script
+- Captures obvious network media URLs (`mp4`, `webm`, `m4v`, …) through:
+  - `chrome.webRequest.onHeadersReceived` (content-type / extension)
+  - Performance resource timing in the page
+- Deduplicates per tab; shows type and size when cheap to obtain
+- Empty state when nothing was found
+- Site-specific Bilibili / YouTube / Xiaohongshu extractors are **stubs only**
 
 ## Layout
 
 ```
 chrome-video-grabber/
 ├── manifest.json
+├── shared/media.js
 ├── background/service-worker.js
-├── content/content-script.js
+├── content/
+│   ├── content-script.js
+│   └── extractors/stubs.js
 ├── popup/
 │   ├── popup.html
 │   ├── popup.css
@@ -23,25 +34,21 @@ chrome-video-grabber/
 
 | Kind | Values |
 |------|--------|
-| `permissions` | `storage`, `activeTab` |
-| `host_permissions` / content matches | `*.xiaohongshu.com`, `*.youtube.com`, `*.youtu.be`, `*.bilibili.com` |
-
-Host permissions are declared up front so later extractors can call cross-origin APIs on those sites without reshaping the manifest.
+| `permissions` | `storage`, `activeTab`, `tabs`, `webRequest`, `downloads` |
+| `host_permissions` / content matches | `<all_urls>` |
 
 ## Load unpacked (local)
 
-1. Open Chrome and go to `chrome://extensions`.
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked**.
-4. Select this folder: `chrome-video-grabber/` (the directory that contains `manifest.json`).
-5. Pin **Video Grabber** from the toolbar puzzle icon if you want quick access.
-6. Open the popup — you should see the empty “暂无视频链接” state.
-7. Visit a supported site (e.g. youtube.com); open DevTools → Console on the page to see the content-script ready log (optional smoke check).
+1. Open Chrome → `chrome://extensions`.
+2. Enable **Developer mode**.
+3. **Load unpacked** → select `chrome-video-grabber/` (contains `manifest.json`).
+4. Open a page with a direct video file or an HTML5 `<video>` (e.g. a sample `.mp4` URL).
+5. Play / let the media load, then open the extension popup.
+6. Confirm entries appear with **复制** / **下载**; empty pages show「暂无视频链接」.
 
-To reload after edits: on `chrome://extensions`, click the refresh icon on the extension card.
+Reload the extension card after edits.
 
-## Next steps (out of scope here)
+## Out of scope (later)
 
-- Site-specific video URL extractors
-- HLS / media pipeline
-- Persist detected URLs into the popup list via messaging + `chrome.storage`
+- Real Bilibili / YouTube / Xiaohongshu extractors (stubs under `content/extractors/`)
+- HLS playlist assembly / muxing

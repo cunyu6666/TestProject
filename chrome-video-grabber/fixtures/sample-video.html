@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Video Grabber — sample page</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      video {
+        width: 100%;
+        background: #111;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Sample HTML5 video</h1>
+    <p>
+      Open this file via a local static server (or as a file URL), then open the
+      Video Grabber popup. The &lt;video&gt; / &lt;source&gt; URLs below should appear.
+    </p>
+    <video controls playsinline>
+      <source
+        src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+        type="video/mp4"
+      />
+      <source
+        src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.webm"
+        type="video/webm"
+      />
+    </video>
+  </body>
+</html>
