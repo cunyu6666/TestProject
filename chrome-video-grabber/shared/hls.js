@@ -35,7 +35,7 @@ export function resolvePlaylistRef(baseUrl, ref) {
 
 /**
  * @typedef {{ kind: 'master', variants: Array<{ uri: string, bandwidth: number, resolution: string | null, name: string | null }> }} MasterPlaylist
- * @typedef {{ kind: 'media', mediaSequence: number, targetDuration: number | null, playlistType: string | null, endList: boolean, encrypted: boolean, mapUri: string | null, segments: Array<{ uri: string, duration: number | null }> }} MediaPlaylist
+ * @typedef {{ kind: 'media', mediaSequence: number, targetDuration: number | null, playlistType: string | null, endList: boolean, encrypted: boolean, hasByteRange: boolean, mapUri: string | null, segments: Array<{ uri: string, duration: number | null }> }} MediaPlaylist
  */
 
 /**
@@ -91,6 +91,7 @@ export function parseM3u8(text, baseUrl) {
     playlistType: null,
     endList: false,
     encrypted: false,
+    hasByteRange: false,
     mapUri: null,
     segments: [],
   };
@@ -116,6 +117,11 @@ export function parseM3u8(text, baseUrl) {
       media.endList = true;
       continue;
     }
+    if (line.startsWith("#EXT-X-BYTERANGE:")) {
+      // MVP: do not silently ignore ranges (would re-download whole files).
+      media.hasByteRange = true;
+      continue;
+    }
     if (line.startsWith("#EXT-X-KEY:")) {
       const attrs = parseAttrList(line.slice("#EXT-X-KEY:".length));
       const method = (attrs.METHOD || "").toUpperCase();
@@ -126,6 +132,9 @@ export function parseM3u8(text, baseUrl) {
     }
     if (line.startsWith("#EXT-X-MAP:")) {
       const attrs = parseAttrList(line.slice("#EXT-X-MAP:".length));
+      if (attrs.BYTERANGE) {
+        media.hasByteRange = true;
+      }
       if (attrs.URI) {
         media.mapUri = resolvePlaylistRef(baseUrl, stripQuotes(attrs.URI));
       }

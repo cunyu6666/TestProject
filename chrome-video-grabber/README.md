@@ -188,6 +188,8 @@ Tips:
 | CORS / cookies | Extension fetch uses host permissions (not the page’s CORS). Cookie-gated CDNs may still 403 when fetched without the tab’s credential context (`credentials: omit`). Prefer playlists the extension can GET anonymously, or progressive downloads that the browser download manager handles with cookies. |
 | Memory / size | Segments are buffered in the Offscreen Document. Soft caps: **~400 segments** and **~180 MiB** total. Large VOD may OOM or hit the cap — use an external downloader for big files. |
 | Master playlists | One variant hop only; default **highest** bandwidth. Multi-audio / subtitle renditions are not selected. |
+| Byte-range | `#EXT-X-BYTERANGE` / MAP `BYTERANGE` playlists are **rejected** (MVP does not Range-fetch; silent ignore would corrupt output). |
+| Redirects | Relative segment/variant URIs resolve against the **final** playlist response URL after redirects. |
 | Output | MPEG-TS segments → `.ts` (concat). fMP4 (`#EXT-X-MAP` / `.m4s`) → `.mp4` (init + media concat). Not a remux to a guaranteed universal mp4 — players that accept TS/fMP4 concat work best. |
 | Progressive mp4 | Unchanged: direct **下载** via `chrome.downloads` for non-playlist URLs. |
 

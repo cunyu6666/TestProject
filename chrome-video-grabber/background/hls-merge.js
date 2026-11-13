@@ -30,21 +30,26 @@ async function fetchOk(url, init) {
 
 /**
  * Resolve a playlist URL to a clear media playlist (follow one master hop).
+ * Uses the final response URL after redirects as the base for relative refs.
  * @param {string} playlistUrl
  * @param {{ variant?: 'highest' | 'lowest' }} [opts]
  * @returns {Promise<{ media: import('../shared/hls.js').MediaPlaylist, mediaUrl: string, variantLabel: string | null }>}
  */
 export async function resolveMediaPlaylist(playlistUrl, opts = {}) {
-  const text = await (await fetchOk(playlistUrl)).text();
-  const parsed = parseM3u8(text, playlistUrl);
+  const res = await fetchOk(playlistUrl);
+  const text = await res.text();
+  const finalUrl = res.url || playlistUrl;
+  const parsed = parseM3u8(text, finalUrl);
 
   if (parsed.kind === "media") {
-    return { media: parsed, mediaUrl: playlistUrl, variantLabel: null };
+    return { media: parsed, mediaUrl: finalUrl, variantLabel: null };
   }
 
   const variant = pickVariant(parsed, opts.variant || "highest");
-  const mediaText = await (await fetchOk(variant.uri)).text();
-  const media = parseM3u8(mediaText, variant.uri);
+  const mediaRes = await fetchOk(variant.uri);
+  const mediaText = await mediaRes.text();
+  const mediaFinalUrl = mediaRes.url || variant.uri;
+  const media = parseM3u8(mediaText, mediaFinalUrl);
   if (media.kind !== "media") {
     throw new Error("Master 的 variant 仍是 master（多层 master 未支持）");
   }
@@ -55,8 +60,8 @@ export async function resolveMediaPlaylist(playlistUrl, opts = {}) {
   ].filter(Boolean);
   return {
     media,
-    mediaUrl: variant.uri,
-    variantLabel: labelParts.join(" · ") || variant.uri,
+    mediaUrl: mediaFinalUrl,
+    variantLabel: labelParts.join(" · ") || mediaFinalUrl,
   };
 }
 
@@ -79,6 +84,12 @@ export async function mergeHlsToBlob(playlistUrl, opts = {}) {
   if (media.encrypted) {
     throw new Error(
       "该 HLS 使用 #EXT-X-KEY 加密（或 DRM）。MVP 不支持解密 / Widevine 等受保护流。"
+    );
+  }
+
+  if (media.hasByteRange) {
+    throw new Error(
+      "该播放列表使用 #EXT-X-BYTERANGE（或 MAP BYTERANGE）。MVP 不支持按字节范围拉取，避免整文件重复下载导致损坏。"
     );
   }
 

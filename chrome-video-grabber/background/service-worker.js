@@ -185,13 +185,16 @@ async function ensureOffscreenDocument() {
 }
 
 /**
+ * Ask offscreen to merge; SW starts chrome.downloads (unavailable in offscreen).
  * @param {string} url
  * @param {'highest' | 'lowest'} [variant]
- * @returns {Promise<{ ok: boolean, reason?: string, downloadId?: number, filename?: string, segmentCount?: number, bytes?: number, variantLabel?: string | null }>}
+ * @returns {Promise<{ ok: boolean, reason?: string, downloadId?: number, filename?: string, segmentCount?: number, bytes?: number, variantLabel?: string | null, extension?: string }>}
  */
 async function downloadHlsMerged(url, variant = "highest") {
   await ensureOffscreenDocument();
-  return new Promise((resolve) => {
+
+  /** @type {{ ok: boolean, reason?: string, blobUrl?: string, filename?: string, segmentCount?: number, bytes?: number, variantLabel?: string | null, extension?: string }} */
+  const mergeResult = await new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { type: "hls:merge-download", url, variant },
       (response) => {
@@ -206,6 +209,49 @@ async function downloadHlsMerged(url, variant = "highest") {
       }
     );
   });
+
+  if (!mergeResult.ok || !mergeResult.blobUrl) {
+    return {
+      ok: false,
+      reason: mergeResult.reason || "merge-failed",
+    };
+  }
+
+  const blobUrl = mergeResult.blobUrl;
+  try {
+    const downloadId = await chrome.downloads.download({
+      url: blobUrl,
+      filename: mergeResult.filename || undefined,
+      saveAs: false,
+      conflictAction: "uniquify",
+    });
+
+    // Keep the offscreen-held blob URL alive briefly for the download manager.
+    await new Promise((r) => setTimeout(r, 2500));
+    chrome.runtime.sendMessage(
+      { type: "hls:revoke-blob", blobUrl },
+      () => void chrome.runtime.lastError
+    );
+
+    return {
+      ok: true,
+      downloadId,
+      filename: mergeResult.filename,
+      segmentCount: mergeResult.segmentCount,
+      bytes: mergeResult.bytes,
+      variantLabel: mergeResult.variantLabel,
+      extension: mergeResult.extension,
+    };
+  } catch (err) {
+    chrome.runtime.sendMessage(
+      { type: "hls:revoke-blob", blobUrl },
+      () => void chrome.runtime.lastError
+    );
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**

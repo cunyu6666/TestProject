@@ -1,14 +1,32 @@
 /**
- * Offscreen Document — holds the merged Blob URL long enough for chrome.downloads.
+ * Offscreen Document — merge HLS into a Blob and keep the object URL alive.
+ * chrome.downloads is NOT available here; the service worker starts the download.
  */
 
 import { mergeHlsToBlob } from "../background/hls-merge.js";
+
+/** @type {Map<string, string>} blobUrl → filename (tracked for revoke) */
+const liveBlobUrls = new Map();
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
   if (message.type === "hls:offscreen-ping") {
     sendResponse({ ok: true, role: "offscreen" });
+    return false;
+  }
+
+  if (message.type === "hls:revoke-blob") {
+    const blobUrl = message.blobUrl;
+    if (typeof blobUrl === "string" && liveBlobUrls.has(blobUrl)) {
+      try {
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        /* ignore */
+      }
+      liveBlobUrls.delete(blobUrl);
+    }
+    sendResponse({ ok: true });
     return false;
   }
 
@@ -20,12 +38,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
 
     void (async () => {
-      let objectUrl = null;
       try {
         const result = await mergeHlsToBlob(url, {
           variant: message.variant === "lowest" ? "lowest" : "highest",
           onProgress: (info) => {
-            // Best-effort progress for SW / popup (may be dropped if no listener).
             try {
               chrome.runtime.sendMessage({
                 type: "hls:progress",
@@ -38,22 +54,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           },
         });
 
-        objectUrl = URL.createObjectURL(result.blob);
-        const downloadId = await chrome.downloads.download({
-          url: objectUrl,
-          filename: result.filename,
-          saveAs: false,
-          conflictAction: "uniquify",
-        });
+        const blobUrl = URL.createObjectURL(result.blob);
+        liveBlobUrls.set(blobUrl, result.filename);
 
-        // Keep the blob URL alive briefly so the download manager can attach.
-        await new Promise((r) => setTimeout(r, 2500));
-        URL.revokeObjectURL(objectUrl);
-        objectUrl = null;
-
+        // Return the blob URL to the service worker; do not call chrome.downloads here.
         sendResponse({
           ok: true,
-          downloadId,
+          blobUrl,
           filename: result.filename,
           segmentCount: result.segmentCount,
           bytes: result.bytes,
@@ -61,13 +68,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           extension: result.extension,
         });
       } catch (err) {
-        if (objectUrl) {
-          try {
-            URL.revokeObjectURL(objectUrl);
-          } catch {
-            /* ignore */
-          }
-        }
         sendResponse({
           ok: false,
           reason: err instanceof Error ? err.message : String(err),
