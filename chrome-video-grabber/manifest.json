@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Video Grabber",
-  "version": "0.2.0",
-  "description": "Detect video resource URLs on the active tab and list them for copy / download.",
+  "version": "0.3.0",
+  "description": "Detect video resource URLs on the active tab (generic + Bilibili) and list them for copy / download.",
   "action": {
     "default_title": "Video Grabber",
     "default_popup": "popup/popup.html",
@@ -22,6 +22,29 @@
     "type": "module"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.cn/*",
+        "*://*.biliintl.com/*",
+        "*://*.bili2233.cn/*"
+      ],
+      "js": ["content/extractors/bilibili-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.bilibili.com/*",
+        "*://*.bilibili.cn/*",
+        "*://*.biliintl.com/*",
+        "*://*.bili2233.cn/*"
+      ],
+      "js": ["content/extractors/bilibili.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": ["<all_urls>"],
       "js": ["content/content-script.js"],

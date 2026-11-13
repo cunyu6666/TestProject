@@ -1,6 +1,9 @@
 /**
- * Site-specific extractors — stubs only (out of scope for generic detection).
- * Future tasks will replace these with real Bilibili / YouTube / Xiaohongshu logic.
+ * Site-specific extractors — YouTube / Xiaohongshu remain stubs.
+ * Bilibili is implemented in:
+ *   - content/extractors/bilibili-main.js (MAIN world)
+ *   - content/extractors/bilibili.js (isolated bridge)
+ * Classic content scripts load those via manifest matches (no bundler).
  */
 
 /**
@@ -14,8 +17,8 @@
 export function runSiteExtractorStubs(hostname) {
   const host = (hostname || "").toLowerCase();
 
-  if (host.includes("bilibili.com")) {
-    // Stub: Bilibili DASH / playurl extractor — not implemented.
+  if (host.includes("bilibili.com") || host.includes("bilibili.cn")) {
+    // Real extractor is wired through manifest content_scripts + content-script.js.
     return [];
   }
   if (host.includes("youtube.com") || host.includes("youtu.be")) {
@@ -31,7 +34,7 @@ export function runSiteExtractorStubs(hostname) {
 }
 
 /**
- * Hook point for future site extractors. Always returns [] for now.
+ * Hook point for future site extractors. Bilibili handled elsewhere.
  * @returns {VideoHit[]}
  */
 export function collectSiteSpecificVideos() {

@@ -12,7 +12,7 @@
         <img class="brand-icon" src="../icons/icon48.png" alt="" width="28" height="28" />
         <div class="brand-text">
           <h1 class="brand-name">Video Grabber</h1>
-          <p class="brand-sub">通用视频链接检测</p>
+          <p class="brand-sub">通用 + Bilibili 视频链接</p>
         </div>
       </div>
       <button type="button" id="refresh-btn" class="refresh-btn" title="刷新">
@@ -32,7 +32,7 @@
         <div id="empty-state" class="empty-state">
           <p class="empty-title">暂无视频链接</p>
           <p class="empty-hint">
-            在任意页面播放或加载视频后打开此弹窗。将检测 &lt;video&gt; / &lt;source&gt; 与常见直链（mp4、webm 等）。
+            在任意页面播放或加载视频后打开此弹窗。将检测 &lt;video&gt; / &lt;source&gt;、常见直链，以及 Bilibili playurl / DASH / bilivideo CDN。
           </p>
         </div>
 
@@ -41,7 +41,7 @@
     </main>
 
     <footer class="footer">
-      <span class="footer-note">站点专用提取器未接入 · 仅通用检测</span>
+      <span class="footer-note">Bilibili 已接入 · DASH 音视频分列 · 无合并</span>
     </footer>
 
     <script src="popup.js" type="module"></script>

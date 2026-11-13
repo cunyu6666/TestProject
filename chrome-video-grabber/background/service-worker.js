@@ -8,6 +8,7 @@ import {
   normalizeMediaUrl,
   guessTypeFromUrl,
   typeFromContentType,
+  isBilibiliCdnUrl,
 } from "../shared/media.js";
 
 /** @typedef {{ url: string, type: string | null, size: number | null, source: string, foundAt: number }} VideoEntry */
@@ -71,9 +72,14 @@ async function upsertVideo(tabId, hit) {
   const url = normalizeMediaUrl(hit.url);
   if (url.startsWith("blob:") || url.startsWith("data:")) return;
 
-  // DOM <video>/<source> may point at extensionless CDNs — still accept.
-  const isDom = hit.source === "dom" || hit.source === "dom-source";
-  if (!isDom && !looksLikeMediaUrl(url)) return;
+  // DOM <video>/<source> and Bilibili playurl/dash hits may lack file extensions.
+  const source = hit.source || "";
+  const isDom = source === "dom" || source === "dom-source";
+  const isBili =
+    typeof source === "string" && source.startsWith("bilibili");
+  if (!isDom && !isBili && !looksLikeMediaUrl(url) && !isBilibiliCdnUrl(url)) {
+    return;
+  }
 
   const map = ensureTabMap(tabId);
   const existing = map.get(url);
@@ -81,6 +87,7 @@ async function upsertVideo(tabId, hit) {
     hit.type ||
     existing?.type ||
     guessTypeFromUrl(url) ||
+    (isBilibiliCdnUrl(url) ? "mp4" : null) ||
     null;
   const size =
     hit.size != null && Number.isFinite(hit.size)

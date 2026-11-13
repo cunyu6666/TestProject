@@ -3,7 +3,8 @@
  * - DOM: <video> / <source> src (+ currentSrc)
  * - Performance resource timing for obvious media URLs
  * - MutationObserver for late-injected media
- * Site-specific Bilibili / YouTube / Xiaohongshu extractors: stub hooks only.
+ * - Bilibili: uses content/extractors/bilibili*.js when present (manifest)
+ * - YouTube / Xiaohongshu: stub hooks only
  */
 
 (function initVideoGrabberContentScript() {
@@ -65,9 +66,32 @@
    * @param {string} url
    * @returns {boolean}
    */
+  function isBilibiliCdn(url) {
+    if (globalThis.VideoGrabberBilibili?.isBilibiliCdnUrl) {
+      return globalThis.VideoGrabberBilibili.isBilibiliCdnUrl(url);
+    }
+    try {
+      const host = new URL(url, location.href).hostname.toLowerCase();
+      return (
+        host === "bilivideo.com" ||
+        host.endsWith(".bilivideo.com") ||
+        host === "bilivideo.cn" ||
+        host.endsWith(".bilivideo.cn") ||
+        host.endsWith(".bilivideo.net")
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * @param {string} url
+   * @returns {boolean}
+   */
   function looksLikeMedia(url) {
     if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
-    return EXT_PATTERN.test(url);
+    if (EXT_PATTERN.test(url)) return true;
+    return isBilibiliCdn(url);
   }
 
   /**
@@ -80,14 +104,18 @@
     const url = normalize(rawUrl);
     if (url.startsWith("blob:") || url.startsWith("data:")) return;
     if (reported.has(url)) return;
-    // DOM video/source may use extensionless CDNs — still accept.
-    if (source !== "dom" && source !== "dom-source" && !looksLikeMedia(url)) {
+    // DOM / Bilibili playurl may use extensionless or tokenized CDN URLs.
+    const allowLoose =
+      source === "dom" ||
+      source === "dom-source" ||
+      (typeof source === "string" && source.startsWith("bilibili"));
+    if (!allowLoose && !looksLikeMedia(url)) {
       return;
     }
     reported.add(url);
     pending.push({
       url,
-      type: extra.type || guessType(url),
+      type: extra.type || guessType(url) || (isBilibiliCdn(url) ? "mp4" : null),
       size: extra.size ?? null,
       source,
     });
@@ -217,16 +245,19 @@
   }
 
   /**
-   * Stub hook — site-specific extractors intentionally return nothing.
-   * Kept inline (classic content script) so future tasks can swap in real logic
-   * or import from content/extractors/ once a bundler lands.
-   * @returns {Array<{ url: string, type?: string | null, source?: string }>}
+   * Site-specific hooks. Bilibili is real (manifest-injected); others stubbed.
+   * @returns {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>}
    */
-  function collectSiteSpecificVideosStub() {
+  function collectSiteSpecificVideos() {
     const host = location.hostname.toLowerCase();
-    if (host.includes("bilibili.com")) {
-      // Stub: Bilibili extractor — not implemented.
-      return [];
+    const bili = globalThis.VideoGrabberBilibili;
+    if (bili?.isBilibiliHost?.(host) || host.includes("bilibili.")) {
+      try {
+        return typeof bili?.collect === "function" ? bili.collect() : [];
+      } catch (err) {
+        console.debug("[Video Grabber] bilibili collect failed", err);
+        return [];
+      }
     }
     if (host.includes("youtube.com") || host.includes("youtu.be")) {
       // Stub: YouTube extractor — not implemented.
@@ -239,10 +270,30 @@
     return [];
   }
 
-  function runSiteStubs() {
-    for (const hit of collectSiteSpecificVideosStub()) {
-      if (hit?.url) enqueue(hit.url, hit.source || "site-stub", { type: hit.type });
+  function runSiteExtractors() {
+    for (const hit of collectSiteSpecificVideos()) {
+      if (hit?.url) {
+        enqueue(hit.url, hit.source || "site", {
+          type: hit.type,
+          size: hit.size ?? null,
+        });
+      }
     }
+  }
+
+  function wireBilibiliMainWorld() {
+    const bili = globalThis.VideoGrabberBilibili;
+    if (!bili?.subscribeMainWorld) return;
+    bili.subscribeMainWorld((hits) => {
+      for (const hit of hits) {
+        if (hit?.url) {
+          enqueue(hit.url, hit.source || "bilibili", {
+            type: hit.type,
+            size: hit.size ?? null,
+          });
+        }
+      }
+    });
   }
 
   chrome.runtime.sendMessage({ type: "ping" }, (response) => {
@@ -256,15 +307,20 @@
     console.debug("[Video Grabber] content ready on", location.hostname, response);
   });
 
+  wireBilibiliMainWorld();
   scanDomVideos();
   scanPerformanceEntries();
   observePerformance();
   observeDomMutations();
-  runSiteStubs();
+  runSiteExtractors();
 
-  // Re-scan shortly after load for late players.
+  // Re-scan shortly after load for late players / Bilibili playinfo.
   setTimeout(() => {
     scanDomVideos();
     scanPerformanceEntries();
+    runSiteExtractors();
   }, 1500);
+  setTimeout(() => {
+    runSiteExtractors();
+  }, 3500);
 })();

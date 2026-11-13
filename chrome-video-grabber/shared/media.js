@@ -62,6 +62,26 @@ export function typeFromContentType(contentType) {
 }
 
 /**
+ * Bilibili / bili* media CDN hosts (playurl dash segments, mp4 durl).
+ * @param {string} url
+ * @returns {boolean}
+ */
+export function isBilibiliCdnUrl(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "bilivideo.com" ||
+      host.endsWith(".bilivideo.com") ||
+      host === "bilivideo.cn" ||
+      host.endsWith(".bilivideo.cn") ||
+      host.endsWith(".bilivideo.net")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * @param {string} url
  * @param {string} [contentType]
  * @returns {boolean}
@@ -73,6 +93,20 @@ export function looksLikeMediaUrl(url, contentType) {
     return true;
   }
   if (typeFromContentType(contentType || "")) return true;
+  // Bilibili CDN often uses tokenized URLs without a clear extension;
+  // also accept octet-stream from those hosts.
+  if (isBilibiliCdnUrl(url)) {
+    if (!contentType) return true;
+    const mime = contentType.split(";")[0].trim().toLowerCase();
+    if (
+      mime.startsWith("video/") ||
+      mime === "application/octet-stream" ||
+      mime === "application/dash+xml" ||
+      mime === ""
+    ) {
+      return true;
+    }
+  }
   return EXT_PATTERN.test(url);
 }
 
