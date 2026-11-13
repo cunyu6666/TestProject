@@ -19,11 +19,30 @@
     "flv",
     "ts",
     "m4s",
+    "m3u8",
+    "m3u",
   ];
   const EXT_PATTERN = new RegExp(
     `\\.(${MEDIA_EXTENSIONS.join("|")})(?:$|[?#])`,
     "i"
   );
+
+  /**
+   * @param {string} url
+   * @returns {boolean}
+   */
+  function isHlsPlaylist(url) {
+    if (!url) return false;
+    try {
+      const u = new URL(url, location.href);
+      const path = u.pathname.toLowerCase();
+      if (path.endsWith(".m3u8") || path.endsWith(".m3u")) return true;
+      if (/[?&](m3u8|playlist|format=m3u8)\b/i.test(u.search)) return true;
+      return false;
+    } catch {
+      return /\.m3u8(?:$|[?#])/i.test(url);
+    }
+  }
 
   /** @type {Set<string>} */
   const reported = new Set();
@@ -51,10 +70,12 @@
    */
   function guessType(url) {
     try {
+      if (isHlsPlaylist(url)) return "m3u8";
       const path = new URL(url, location.href).pathname;
       const match = path.match(/\.([a-z0-9]+)$/i);
       if (!match) return null;
       const ext = match[1].toLowerCase();
+      if (ext === "m3u") return "m3u8";
       return MEDIA_EXTENSIONS.includes(ext) ? ext : null;
     } catch {
       return null;
@@ -131,6 +152,7 @@
    */
   function looksLikeMedia(url) {
     if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
+    if (isHlsPlaylist(url)) return true;
     if (EXT_PATTERN.test(url)) return true;
     return isBilibiliCdn(url) || isGoogleVideo(url) || isXiaohongshuCdn(url);
   }

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Video Grabber",
-  "version": "0.5.0",
-  "description": "Detect video resource URLs on the active tab (generic + Bilibili + YouTube + Xiaohongshu) and list them for copy / download.",
+  "version": "0.6.0",
+  "description": "Detect video resource URLs on the active tab (generic + Bilibili + YouTube + Xiaohongshu), list them for copy / download, and merge clear HLS (.m3u8) VOD into a single file.",
   "action": {
     "default_title": "Video Grabber",
     "default_popup": "popup/popup.html",
@@ -104,6 +104,7 @@
     "activeTab",
     "tabs",
     "webRequest",
-    "downloads"
+    "downloads",
+    "offscreen"
   ]
 }
