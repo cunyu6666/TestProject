@@ -1,17 +1,72 @@
 /**
- * Popup UI — list shell for future video URLs + empty state.
- * Extractors / HLS are intentionally not wired yet.
+ * Popup — lists detected video URLs with copy + browser download.
  */
+
+import { formatBytes } from "../shared/media.js";
 
 const videoListEl = document.getElementById("video-list");
 const emptyStateEl = document.getElementById("empty-state");
 const countBadgeEl = document.getElementById("count-badge");
+const refreshBtn = document.getElementById("refresh-btn");
+const statusLineEl = document.getElementById("status-line");
 
 /**
- * @param {string[]} urls
+ * @param {string} text
+ * @param {boolean} [isError]
  */
-function renderVideoList(urls) {
-  const items = Array.isArray(urls) ? urls.filter(Boolean) : [];
+function setStatus(text, isError = false) {
+  if (!text) {
+    statusLineEl.hidden = true;
+    statusLineEl.textContent = "";
+    statusLineEl.classList.remove("error");
+    return;
+  }
+  statusLineEl.hidden = false;
+  statusLineEl.textContent = text;
+  statusLineEl.classList.toggle("error", isError);
+}
+
+/**
+ * @param {string} url
+ */
+async function copyUrl(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    return true;
+  } catch {
+    // Fallback for restricted clipboard
+    const ta = document.createElement("textarea");
+    ta.value = url;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
+
+/**
+ * @param {string} url
+ */
+function downloadUrl(url) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "videos:download", url }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, reason: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { ok: false, reason: "no-response" });
+    });
+  });
+}
+
+/**
+ * @param {Array<{ url: string, type?: string | null, size?: number | null, source?: string }>} videos
+ */
+function renderVideoList(videos) {
+  const items = Array.isArray(videos) ? videos.filter((v) => v?.url) : [];
 
   videoListEl.replaceChildren();
 
@@ -27,22 +82,118 @@ function renderVideoList(urls) {
   countBadgeEl.textContent = String(items.length);
 
   const fragment = document.createDocumentFragment();
-  for (const url of items) {
+
+  for (const item of items) {
     const li = document.createElement("li");
     li.className = "video-item";
 
     const link = document.createElement("a");
-    link.href = url;
+    link.className = "video-url";
+    link.href = item.url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.textContent = url;
+    link.textContent = item.url;
+    link.title = item.url;
 
-    li.appendChild(link);
+    const meta = document.createElement("div");
+    meta.className = "video-meta";
+
+    if (item.type) {
+      const typeChip = document.createElement("span");
+      typeChip.className = "meta-chip type";
+      typeChip.textContent = item.type;
+      meta.appendChild(typeChip);
+    }
+
+    const sizeLabel = formatBytes(item.size);
+    if (sizeLabel) {
+      const sizeChip = document.createElement("span");
+      sizeChip.className = "meta-chip";
+      sizeChip.textContent = sizeLabel;
+      meta.appendChild(sizeChip);
+    }
+
+    if (item.source) {
+      const sourceChip = document.createElement("span");
+      sourceChip.className = "meta-chip";
+      sourceChip.textContent = item.source;
+      meta.appendChild(sourceChip);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "video-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "action-btn";
+    copyBtn.textContent = "复制";
+    copyBtn.addEventListener("click", async () => {
+      const ok = await copyUrl(item.url);
+      if (ok) {
+        copyBtn.textContent = "已复制";
+        copyBtn.classList.add("copied");
+        setTimeout(() => {
+          copyBtn.textContent = "复制";
+          copyBtn.classList.remove("copied");
+        }, 1200);
+      } else {
+        setStatus("复制失败", true);
+      }
+    });
+
+    const dlBtn = document.createElement("button");
+    dlBtn.type = "button";
+    dlBtn.className = "action-btn";
+    dlBtn.textContent = "下载";
+    dlBtn.addEventListener("click", async () => {
+      dlBtn.disabled = true;
+      dlBtn.textContent = "…";
+      const result = await downloadUrl(item.url);
+      dlBtn.disabled = false;
+      if (result.ok) {
+        dlBtn.textContent = "已开始";
+        setTimeout(() => {
+          dlBtn.textContent = "下载";
+        }, 1200);
+        setStatus("已开始浏览器下载");
+      } else {
+        dlBtn.textContent = "下载";
+        setStatus(result.reason || "下载失败", true);
+      }
+    });
+
+    actions.append(copyBtn, dlBtn);
+    li.append(link, meta, actions);
     fragment.appendChild(li);
   }
+
   videoListEl.appendChild(fragment);
 }
 
-// Scaffold: no capture yet — always show empty state.
-// Later: chrome.storage / messaging from content scripts.
-renderVideoList([]);
+function loadVideos() {
+  setStatus("加载中…");
+  chrome.runtime.sendMessage({ type: "videos:list" }, (response) => {
+    if (chrome.runtime.lastError) {
+      renderVideoList([]);
+      setStatus(chrome.runtime.lastError.message, true);
+      return;
+    }
+    if (!response?.ok) {
+      renderVideoList([]);
+      setStatus("无法读取当前标签页", true);
+      return;
+    }
+    renderVideoList(response.videos || []);
+    setStatus(
+      response.videos?.length
+        ? `当前标签 · ${response.videos.length} 条`
+        : ""
+    );
+  });
+}
+
+refreshBtn.addEventListener("click", () => {
+  loadVideos();
+});
+
+loadVideos();
