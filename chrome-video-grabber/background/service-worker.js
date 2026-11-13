@@ -15,6 +15,9 @@ import {
 /** @type {Map<number, Map<string, VideoEntry>>} */
 const videosByTab = new Map();
 
+/** @type {Map<number, Promise<void>>} */
+const hydrateInFlight = new Map();
+
 const STORAGE_PREFIX = "videos:tab:";
 
 /**
@@ -44,27 +47,60 @@ async function persistTab(tabId) {
 }
 
 /**
+ * Load session-persisted hits into memory (single-flight per tab).
+ * Always leaves an in-memory map so later upserts do not skip hydration.
  * @param {number} tabId
  */
 async function hydrateTab(tabId) {
   if (videosByTab.has(tabId)) return;
-  try {
-    const key = `${STORAGE_PREFIX}${tabId}`;
-    const data = await chrome.storage.session.get(key);
-    const list = data[key];
-    if (!Array.isArray(list) || list.length === 0) return;
-    const map = ensureTabMap(tabId);
-    for (const item of list) {
-      if (item?.url) map.set(item.url, item);
-    }
-  } catch (err) {
-    console.debug("[Video Grabber] session hydrate failed", err);
+
+  let pending = hydrateInFlight.get(tabId);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const key = `${STORAGE_PREFIX}${tabId}`;
+        const data = await chrome.storage.session.get(key);
+        const list = data[key];
+        const restored = new Map();
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            if (item?.url) restored.set(item.url, item);
+          }
+        }
+
+        if (!videosByTab.has(tabId)) {
+          videosByTab.set(tabId, restored);
+        } else {
+          // Concurrent upsert created a map first — merge restored under it.
+          const existing = videosByTab.get(tabId);
+          for (const [url, item] of restored) {
+            if (!existing.has(url)) existing.set(url, item);
+          }
+        }
+      } catch (err) {
+        if (!videosByTab.has(tabId)) {
+          videosByTab.set(tabId, new Map());
+        }
+        console.debug("[Video Grabber] session hydrate failed", err);
+      }
+    })().finally(() => {
+      hydrateInFlight.delete(tabId);
+    });
+    hydrateInFlight.set(tabId, pending);
   }
+
+  await pending;
 }
 
 /**
  * @param {number} tabId
- * @param {{ url: string, type?: string | null, size?: number | null, source?: string }} hit
+ * @param {{
+ *   url: string,
+ *   type?: string | null,
+ *   size?: number | null,
+ *   source?: string,
+ *   contentType?: string | null,
+ * }} hit
  */
 async function upsertVideo(tabId, hit) {
   if (tabId < 0 || !hit?.url) return;
@@ -72,14 +108,18 @@ async function upsertVideo(tabId, hit) {
   if (url.startsWith("blob:") || url.startsWith("data:")) return;
 
   // DOM <video>/<source> may point at extensionless CDNs — still accept.
+  // Network hits must keep MIME Content-Type acceptance from webRequest.
   const isDom = hit.source === "dom" || hit.source === "dom-source";
-  if (!isDom && !looksLikeMediaUrl(url)) return;
+  if (!isDom && !looksLikeMediaUrl(url, hit.contentType || undefined)) return;
+
+  await hydrateTab(tabId);
 
   const map = ensureTabMap(tabId);
   const existing = map.get(url);
   const type =
     hit.type ||
     existing?.type ||
+    typeFromContentType(hit.contentType || "") ||
     guessTypeFromUrl(url) ||
     null;
   const size =
@@ -113,6 +153,7 @@ async function listVideos(tabId) {
  */
 async function clearTab(tabId) {
   videosByTab.delete(tabId);
+  hydrateInFlight.delete(tabId);
   try {
     await chrome.storage.session.remove(`${STORAGE_PREFIX}${tabId}`);
   } catch {
@@ -129,8 +170,8 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  // Fresh navigation — drop prior page's hits.
-  if (changeInfo.status === "loading" && changeInfo.url) {
+  // New document load (including same-URL reload) — drop prior page's hits.
+  if (changeInfo.status === "loading") {
     void clearTab(tabId);
   }
 });
@@ -161,6 +202,7 @@ chrome.webRequest.onHeadersReceived.addListener(
       type,
       size: contentLength,
       source: "network",
+      contentType,
     });
   },
   { urls: ["<all_urls>"], types: ["media", "xmlhttprequest", "other", "object"] },
